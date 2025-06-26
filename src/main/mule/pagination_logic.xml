@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="1a4fc34b-3440-4216-b84c-d9442dc4b060" >
+		<http:listener-connection host="localhost" port="8081" />
+	</http:listener-config>
+	<flow name="pagination_logicFlow1" doc:id="2a0bc0a1-60f5-49cb-9131-3165fbd819e9" >
+		<http:listener doc:name="Listener" doc:id="377db51f-de13-4576-856f-621d2e8ce846" config-ref="HTTP_Listener_config" path="/customer"/>
+		<ee:transform doc:name="Transform Message" doc:id="9306439d-97a5-4818-bdc0-5ba55c819f6c">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output text/plain
+
+import dw::Crypto
+import toBinary from dw::core::Numbers
+import withMaxSize from dw::core::Strings
+import toBase64 from dw::core::Binaries
+import * from dw::core::URL
+
+var Qparam = {
+    "searchCriteria[filter_groups][0][filters][0][field]": "updated_at",
+    "searchCriteria[filter_groups][0][filters][0][conditionType]": "gt",
+    "searchCriteria[filter_groups][0][filters][0][value]":payload.time,
+    "searchCriteria[page_size]" : 1,
+	"searchCriteria[sortOrders][0][field]" : "updated_at",
+	"searchCriteria[sortOrders][0][direction]" : "ASC",
+	"searchCriteria[currentPage]" : 1
+}
+
+var consumer_key = "pra4ya5vhjm4xlihv93fluqj6q7nyto1"
+var consumer_secret = "0qopy7a7vd46yaaj92p9gwunpcp38kcc"
+var access_token = "omjlwj50t92piduu4tpruzka5g4kah96"
+var token_secret = "4nq6wus4486z4skaodnrmd95965923p3"
+var signature_method = "HMAC-SHA256"
+var version = "1.0"
+
+var http_method = "GET"
+var base_url = "https://magento-dev.webapp.ampfit.com/rest/V1/products"
+
+var oauth_nonce = toBase64(toBinary(randomInt(99999999999))) withMaxSize 11
+var oauth_timestamp = (now() as Number) as String
+
+// OAuth params without signature
+var oauthParams = {
+    "oauth_consumer_key": consumer_key,
+    "oauth_nonce": oauth_nonce,
+    "oauth_signature_method": signature_method,
+    "oauth_timestamp": oauth_timestamp,
+    "oauth_token": access_token,
+    "oauth_version": version
+}
+
+// Combine query params + oauth params for signature base string
+var allParams = Qparam ++ oauthParams
+
+// Sort keys, encode and generate "key=val" strings
+var encodedParamPairs = 
+    allParams
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+
+// Join all param pairs by "&"
+
+var parameter_string = encodedParamPairs joinBy "&"
+
+// Construct signature base string
+var signature_base_string = 
+    upper(http_method) ++ "&" ++ 
+    encodeURIComponent(base_url) ++ "&" ++ 
+    encodeURIComponent(parameter_string)
+
+// Signing key (consumer_secret & token_secret)
+var signing_key = consumer_secret ++ "&" ++ token_secret
+
+// Calculate HMAC-SHA256 signature & encode as base64
+var signature_bytes = Crypto::HMACBinary(signing_key as Binary, signature_base_string as Binary, "HmacSHA256")
+var signature = toBase64(signature_bytes)
+var oauth_signature = encodeURIComponent(signature)
+
+// Build final query string for URL (only query parameters, properly encoded)
+var queryString = 
+    Qparam
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+        joinBy "&"
+
+var url = base_url ++ "?" ++ queryString
+
+// Build Authorization header string including signature
+var auth_header = 
+    "OAuth " ++
+    "oauth_consumer_key=\"" ++ consumer_key ++ "\"," ++
+    "oauth_token=\"" ++ access_token ++ "\"," ++
+    "oauth_signature_method=\"" ++ signature_method ++ "\"," ++
+    "oauth_timestamp=\"" ++ oauth_timestamp ++ "\"," ++
+    "oauth_nonce=\"" ++ oauth_nonce ++ "\"," ++
+    "oauth_version=\"" ++ version ++ "\"," ++
+    "oauth_signature=\"" ++ oauth_signature ++ "\""
+
+---
+auth_header
+]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+	</flow>
+	<flow name="pagination_logicFlow" doc:id="004b1367-422c-47f7-aa1f-b13ae265aa0b" >
+		<http:listener doc:name="Listener" doc:id="55cc9cd6-32b0-471a-bdd6-b9ff02b9ca52" config-ref="HTTP_Listener_config" path="/customers"/>
+		<set-variable value="#[payload.time]" doc:name="Set Variable" doc:id="cfd9e833-05df-45e8-806e-92fbcade31d7" variableName="Time_Stamp"/>
+		<ee:transform doc:name="Transform Message" doc:id="11c6b778-901d-4915-9113-0ccf7d482abc" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output text/plain
+
+import dw::Crypto
+import toBinary from dw::core::Numbers
+import withMaxSize from dw::core::Strings
+import toBase64 from dw::core::Binaries
+import * from dw::core::URL
+
+var Qparam = {
+  "searchCriteria[filter_groups][0][filters][0][condition_type]" : "gt",
+  "searchCriteria[filter_groups][0][filters][0][field]" : "updated_at",
+  "searchCriteria[filter_groups][0][filters][0][value]" : vars.Time_Stamp,
+  "searchCriteria[sortOrders][0][field]":"updated_at",
+  "searchCriteria[sortOrders][0][direction]":"ASC",
+  "searchCriteria[pageSize]" : 10,
+  "searchCriteria[currentPage]" :1
+  }
+
+var consumer_key = "pra4ya5vhjm4xlihv93fluqj6q7nyto1"
+var consumer_secret = "0qopy7a7vd46yaaj92p9gwunpcp38kcc"
+var access_token = "omjlwj50t92piduu4tpruzka5g4kah96"
+var token_secret = "4nq6wus4486z4skaodnrmd95965923p3"
+var signature_method = "HMAC-SHA256"
+var version = "1.0"
+
+var http_method = "GET"
+var base_url = "https://magento-dev.webapp.ampfit.com/rest/V1/customers/search"
+
+var oauth_nonce = toBase64(randomInt(now() as Number) withMaxSize 10) withMaxSize 11
+var oauth_timestamp = (now() as Number) as String
+
+// OAuth params without signature
+var oauthParams = {
+    "oauth_consumer_key": consumer_key,
+    "oauth_nonce": oauth_nonce,
+    "oauth_signature_method": signature_method,
+    "oauth_timestamp": oauth_timestamp,
+    "oauth_token": access_token,
+    "oauth_version": version
+}
+
+// Combine query params + oauth params for signature base string
+var allParams = Qparam ++ oauthParams
+
+// Sort keys, encode and generate "key=val" strings
+var encodedParamPairs = 
+    allParams
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+
+// Join all param pairs by "&"
+
+var parameter_string = encodedParamPairs joinBy "&"
+
+// Construct signature base string
+var signature_base_string = 
+    upper(http_method) ++ "&" ++ 
+    encodeURIComponent(base_url) ++ "&" ++ 
+    encodeURIComponent(parameter_string)
+
+// Signing key (consumer_secret & token_secret)
+var signing_key = consumer_secret ++ "&" ++ token_secret
+
+// Calculate HMAC-SHA256 signature & encode as base64
+var signature_bytes = Crypto::HMACBinary(signing_key as Binary, signature_base_string as Binary, "HmacSHA256")
+var signature = toBase64(signature_bytes)
+var oauth_signature = encodeURIComponent(signature)
+
+// Build final query string for URL (only query parameters, properly encoded)
+var queryString = 
+    Qparam
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+        joinBy "&"
+
+var url = base_url ++ "?" ++ queryString
+
+// Build Authorization header string including signature
+var auth_header = 
+    "OAuth " ++
+    "oauth_consumer_key=\"" ++ consumer_key ++ "\"," ++
+    "oauth_token=\"" ++ access_token ++ "\"," ++
+    "oauth_signature_method=\"" ++ signature_method ++ "\"," ++
+    "oauth_timestamp=\"" ++ oauth_timestamp ++ "\"," ++
+    "oauth_nonce=\"" ++ oauth_nonce ++ "\"," ++
+    "oauth_version=\"" ++ version ++ "\"," ++
+    "oauth_signature=\"" ++ oauth_signature ++ "\""
+
+---
+auth_header
+]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<set-variable value="#[payload]" doc:name="Set Variable" doc:id="7758450e-5c41-4c82-a58e-a5b492821ea0" variableName="Authorization"/>
+		<http:request method="GET" doc:name="Customers_Get_Request" doc:id="94558cfb-f073-4555-8b55-4cdabda3f0bb" url="https://magento-dev.webapp.ampfit.com/rest/V1/customers/search">
+			<http:headers ><![CDATA[#[Authorization:vars.Authorization]]]></http:headers>
+			<http:query-params ><![CDATA[#[%dw 2.0
+output application/java
+---
+{
+  "searchCriteria[filter_groups][0][filters][0][condition_type]" : "gt",
+  "searchCriteria[filter_groups][0][filters][0][field]" : "updated_at",
+  "searchCriteria[filter_groups][0][filters][0][value]" : vars.Time_Stamp,
+  "searchCriteria[sortOrders][0][field]":"updated_at",
+  "searchCriteria[sortOrders][0][direction]":"ASC",
+  "searchCriteria[pageSize]" : 10,
+  "searchCriteria[currentPage]" : 1
+  }]]]></http:query-params>
+		</http:request>
+		<set-variable value="#[%dw 2.0&#10;	output application/java&#10;	var total_count = payload.total_count as Number&#10;	var page_size = payload.search_criteria.page_size as Number&#10;	var total_pages = ceil(total_count / page_size)&#10;	---&#10;	total_pages]" doc:name="Total_Pages" doc:id="dae47d98-1e34-4379-a408-93eca5e4fd08" variableName="Total_Pages"/>
+		<set-variable value="#[%dw 2.0&#10;output application/json&#10;---&#10;payload.items]" doc:name="Store_Customers" doc:id="b82e3258-c9bc-49ec-a42e-fcbd59d3db62" variableName="All_Customers"/>
+		<set-variable value="#[%dw 2.0&#10;	output application/java&#10;	---&#10;	if (vars.Total_Pages &gt; 1)&#10;	  (2 to vars.Total_Pages) default []&#10;	else&#10;	  []]" doc:name="Pages_List" doc:id="a4b78543-0f4c-44bf-b675-bdf6045ec662" variableName="Pages_List"/>
+		<foreach doc:name="For Each" doc:id="8df95324-e837-460e-aff2-e6b16fa5d935" collection="#[vars.Pages_List]">
+			<set-variable value="#[payload]" doc:name="Current_Page" doc:id="135447f6-9238-4052-b73f-9db5b44c1ebb" variableName="Current_Page"/>
+			<ee:transform doc:name="Transform Message" doc:id="b9b3a36c-1f22-42e7-a9a8-27c455ac2a52" >
+				<ee:message >
+					<ee:set-payload ><![CDATA[%dw 2.0
+output text/plain
+
+import dw::Crypto
+import toBinary from dw::core::Numbers
+import withMaxSize from dw::core::Strings
+import toBase64 from dw::core::Binaries
+import * from dw::core::URL
+
+var Qparam = {
+    "searchCriteria[filter_groups][0][filters][0][field]": "updated_at",
+    "searchCriteria[filter_groups][0][filters][0][conditionType]": "gt",
+    "searchCriteria[filter_groups][0][filters][0][value]":vars.Time_Stamp,
+    "searchCriteria[page_size]" : 10,
+	"searchCriteria[sortOrders][0][field]" : "updated_at",
+	"searchCriteria[sortOrders][0][direction]" : "ASC",
+	"searchCriteria[currentPage]" : vars.Current_Page
+}
+
+var consumer_key = "pra4ya5vhjm4xlihv93fluqj6q7nyto1"
+var consumer_secret = "0qopy7a7vd46yaaj92p9gwunpcp38kcc"
+var access_token = "omjlwj50t92piduu4tpruzka5g4kah96"
+var token_secret = "4nq6wus4486z4skaodnrmd95965923p3"
+var signature_method = "HMAC-SHA256"
+var version = "1.0"
+var http_method = "GET"
+var base_url = "https://magento-dev.webapp.ampfit.com/rest/V1/customers/search"
+var oauth_nonce = toBase64(randomInt(now() as Number) withMaxSize 10) withMaxSize 11
+var oauth_timestamp = (now() as Number) as String
+
+// OAuth params without signature
+var oauthParams = {
+    "oauth_consumer_key": consumer_key,
+    "oauth_nonce": oauth_nonce,
+    "oauth_signature_method": signature_method,
+    "oauth_timestamp": oauth_timestamp,
+    "oauth_token": access_token,
+    "oauth_version": version
+}
+
+// Combine query params + oauth params for signature base string
+var allParams = Qparam ++ oauthParams
+
+// Sort keys, encode and generate "key=val" strings
+var encodedParamPairs = 
+    allParams
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+
+// Join all param pairs by "&"
+
+var parameter_string = encodedParamPairs joinBy "&"
+
+// Construct signature base string
+var signature_base_string = 
+    upper(http_method) ++ "&" ++ 
+    encodeURIComponent(base_url) ++ "&" ++ 
+    encodeURIComponent(parameter_string)
+
+// Signing key (consumer_secret & token_secret)
+var signing_key = consumer_secret ++ "&" ++ token_secret
+
+// Calculate HMAC-SHA256 signature & encode as base64
+var signature_bytes = Crypto::HMACBinary(signing_key as Binary, signature_base_string as Binary, "HmacSHA256")
+var signature = toBase64(signature_bytes)
+var oauth_signature = encodeURIComponent(signature)
+
+// Build final query string for URL (only query parameters, properly encoded)
+var queryString = 
+    Qparam
+        orderBy ((v, k) -> k)
+        pluck ((v, k) -> encodeURIComponent(k) ++ "=" ++ encodeURIComponent(v))
+        joinBy "&"
+
+var url = base_url ++ "?" ++ queryString
+
+// Build Authorization header string including signature
+var auth_header = 
+    "OAuth " ++
+    "oauth_consumer_key=\"" ++ consumer_key ++ "\"," ++
+    "oauth_token=\"" ++ access_token ++ "\"," ++
+    "oauth_signature_method=\"" ++ signature_method ++ "\"," ++
+    "oauth_timestamp=\"" ++ oauth_timestamp ++ "\"," ++
+    "oauth_nonce=\"" ++ oauth_nonce ++ "\"," ++
+    "oauth_version=\"" ++ version ++ "\"," ++
+    "oauth_signature=\"" ++ oauth_signature ++ "\""
+
+---
+auth_header
+]]></ee:set-payload>
+				</ee:message>
+			</ee:transform>
+			<set-variable value="#[payload]" doc:name="Authorization" doc:id="e20d2de7-4beb-434f-97ea-857289a967ae" variableName="Authorization1"/>
+			<http:request method="GET" doc:name="Get Subsequent Customers" doc:id="3c7c6090-c5d0-4a0a-8d66-1ce739ebb7c7" url="https://magento-dev.webapp.ampfit.com/rest/V1/customers/search">
+				<http:headers ><![CDATA[#[Authorization:vars.Authorization1]]]></http:headers>
+				<http:query-params ><![CDATA[#[%dw 2.0
+output application/json
+---
+{
+    "searchCriteria[filter_groups][0][filters][0][field]": "updated_at",
+    "searchCriteria[filter_groups][0][filters][0][conditionType]": "gt",
+    "searchCriteria[filter_groups][0][filters][0][value]":vars.Time_Stamp,
+    "searchCriteria[page_size]" : 10,
+	"searchCriteria[sortOrders][0][field]" : "updated_at",
+	"searchCriteria[sortOrders][0][direction]" : "ASC",
+	"searchCriteria[currentPage]" : vars.Current_Page
+}]]]></http:query-params>
+			</http:request>
+			<set-variable value="#[%dw 2.0&#10;	output application/json&#10;	---&#10;	vars.All_Customers ++ (payload.items)]" doc:name="All Customers" doc:id="7dd4e1f9-e34a-43fd-98f5-353555fbb7d8" variableName="All_Customers"/>
+		</foreach>
+		<set-payload value="#[%dw 2.0&#10;output application/json&#10;---&#10;vars.All_Customers]" doc:name="Set Payload" doc:id="011542d5-6259-4d35-be32-e0bdab254b09" />
+		<logger level="INFO" doc:name="Logger" doc:id="5e3ac52f-6f6b-4a1b-a715-84ff1e2f047a" message="#[payload]"/>
+	</flow>
+</mule>
