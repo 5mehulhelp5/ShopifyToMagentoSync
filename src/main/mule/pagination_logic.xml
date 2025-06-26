@@ -340,6 +340,5 @@ output application/json
 			<set-variable value="#[%dw 2.0&#10;	output application/json&#10;	---&#10;	vars.All_Customers ++ (payload.items)]" doc:name="All Customers" doc:id="7dd4e1f9-e34a-43fd-98f5-353555fbb7d8" variableName="All_Customers"/>
 		</foreach>
 		<set-payload value="#[%dw 2.0&#10;output application/json&#10;---&#10;vars.All_Customers]" doc:name="Set Payload" doc:id="011542d5-6259-4d35-be32-e0bdab254b09" />
-		<logger level="INFO" doc:name="Logger" doc:id="5e3ac52f-6f6b-4a1b-a715-84ff1e2f047a" message="#[payload]"/>
 	</flow>
 </mule>
